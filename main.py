@@ -11,8 +11,8 @@ N = 210
 
 def obs_map(cmap):
     """
-    Initialize obstacles' positions
-    :return: position of obstacles
+    坐标转换
+    :return: 返回地图障碍坐标
     """
     obs = set()
     for x in range(200):
@@ -40,8 +40,8 @@ class AStar:
 
     def searching(self):
         """
-        A_star Searching.
-        :return: path, visited order
+        A*算法
+        :return: 路径和遍历点
         """
 
         self.PARENT[self.s_start] = self.s_start
@@ -54,7 +54,7 @@ class AStar:
             _, s = heapq.heappop(self.OPEN)
             self.CLOSED.append(s)
 
-            if s == self.s_goal:  # stop condition
+            if s == self.s_goal:  # 停止的情况
                 break
 
             for s_n in self.get_neighbor(s):
@@ -63,82 +63,30 @@ class AStar:
                 if s_n not in self.g:
                     self.g[s_n] = math.inf
 
-                if new_cost < self.g[s_n]:  # conditions for updating Cost
+                if new_cost < self.g[s_n]:  # 更新代价情况
                     self.g[s_n] = new_cost
                     self.PARENT[s_n] = s
                     heapq.heappush(self.OPEN, (self.f_value(s_n), s_n))
 
         return self.extract_path(self.PARENT), self.CLOSED
 
-    def searching_repeated_astar(self, e):
-        """
-        repeated A*.
-        :param e: weight of A*
-        :return: path and visited order
-        """
-
-        path, visited = [], []
-
-        while e >= 1:
-            p_k, v_k = self.repeated_searching(self.s_start, self.s_goal, e)
-            path.append(p_k)
-            visited.append(v_k)
-            e -= 0.5
-
-        return path, visited
-
-    def repeated_searching(self, s_start, s_goal, e):
-        """
-        run A* with weight e.
-        :param s_start: starting state
-        :param s_goal: goal state
-        :param e: weight of a*
-        :return: path and visited order.
-        """
-
-        g = {s_start: 0, s_goal: float("inf")}
-        PARENT = {s_start: s_start}
-        OPEN = []
-        CLOSED = []
-        heapq.heappush(OPEN,
-                       (g[s_start] + e * self.heuristic(s_start), s_start))
-
-        while OPEN:
-            _, s = heapq.heappop(OPEN)
-            CLOSED.append(s)
-
-            if s == s_goal:
-                break
-
-            for s_n in self.get_neighbor(s):
-                new_cost = g[s] + self.cost(s, s_n)
-
-                if s_n not in g:
-                    g[s_n] = math.inf
-
-                if new_cost < g[s_n]:  # conditions for updating Cost
-                    g[s_n] = new_cost
-                    PARENT[s_n] = s
-                    heapq.heappush(OPEN, (g[s_n] + e * self.heuristic(s_n), s_n))
-
-        return self.extract_path(PARENT), CLOSED
 
     def get_neighbor(self, s):
         """
-        find neighbors of state s that not in obstacles.
-        :param s: state
-        :return: neighbors
+        找到不是障碍的领点
+        :param s: 状态
+        :return: 邻点
         """
 
         return [(s[0] + u[0], s[1] + u[1]) for u in self.u_set]
 
     def cost(self, s_start, s_goal):
         """
-        Calculate Cost for this motion
-        :param s_start: starting node
-        :param s_goal: end node
-        :return:  Cost for this motion
-        :note: Cost function could be more complicate!
+        计算此次移动的代价
+        :param s_start: 起始节点
+        :param s_goal: 结束节点
+        :return:  移动代价
+        :note: 这个计算比较复杂
         """
 
         if self.is_collision(s_start, s_goal):
@@ -148,10 +96,10 @@ class AStar:
 
     def is_collision(self, s_start, s_end):
         """
-        check if the line segment (s_start, s_end) is collision.
-        :param s_start: start node
-        :param s_end: end node
-        :return: True: is collision / False: not collision
+        判断是否碰边
+        :param s_start: 起始节点
+        :param s_end: 终止节点
+        :return: True: 碰 / False: 没碰
         """
 
         if s_start in self.obs or s_end in self.obs:
@@ -172,8 +120,8 @@ class AStar:
 
     def f_value(self, s):
         """
-        f = g + h. (g: Cost to come, h: heuristic value)
-        :param s: current state
+        启发式函数
+        :param s: 当前状态
         :return: f
         """
 
@@ -181,8 +129,8 @@ class AStar:
 
     def extract_path(self, PARENT):
         """
-        Extract the path based on the PARENT set.
-        :return: The planning path
+        根据父亲节点提取路径
+        :return: 规划路径
         """
 
         path = [self.s_goal]
@@ -199,18 +147,14 @@ class AStar:
 
     def heuristic(self, s):
         """
-        Calculate heuristic.
-        :param s: current node (state)
-        :return: heuristic function value
+        曼哈顿距离
+        :param s: 当前节点
+        :return: h代价
         """
 
-        heuristic_type = self.heuristic_type  # heuristic type
         goal = self.s_goal  # goal node
+        return abs(goal[0] - s[0]) + abs(goal[1] - s[1])
 
-        if heuristic_type == "manhattan":
-            return abs(goal[0] - s[0]) + abs(goal[1] - s[1])
-        else:
-            return math.hypot(goal[0] - s[0], goal[1] - s[1])
 
 
 class Robot:
