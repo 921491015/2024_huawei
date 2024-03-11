@@ -14,21 +14,34 @@ def obs_map(cmap):
     坐标转换
     :return: 返回地图障碍坐标
     """
+    ch_array = [[char for char in sublist[0]] for sublist in cmap]
     obs = set()
     for x in range(200):
         for y in range(200):
-            if cmap[y][x] in ['*', '#']:  # y为向右正向，x为向下正向
-                obs.add([x, y])  # 是障碍物则记录坐标
+            if ch_array[y][x] in ['*', '#']:  # y为向右正向，x为向下正向
+                obs.add((y, x))  # 是障碍物则记录坐标
     return obs
 
+
+def move_direction(current_pos, next_pos):
+    dx, dy = next_pos[0] - current_pos[0], next_pos[1] - current_pos[1]
+    if dx == 1:
+        return 3  # 下移
+    elif dx == -1:
+        return 2  # 上移
+    elif dy == 1:
+        return 0  # 右移
+    elif dy == -1:
+        return 1  # 左移
+    else:
+        return 0
 
 class AStar:
     """AStar set the cost + heuristics as the priority
     """
-    def __init__(self, s_start, s_goal, heuristic_type, obs_position):
+    def __init__(self, s_start, s_goal, obs_position):
         self.s_start = s_start
         self.s_goal = s_goal
-        self.heuristic_type = heuristic_type
 
         self.u_set = [(-1, 0), (0, 1), (1, 0), (0, -1)]  # feasible input set
         self.obs = obs_position  # position of obstacles
@@ -52,7 +65,7 @@ class AStar:
 
         while self.OPEN:
             _, s = heapq.heappop(self.OPEN)
-            self.CLOSED.append(s)
+            # self.CLOSED.append(s)
 
             if s == self.s_goal:  # 停止的情况
                 break
@@ -68,7 +81,7 @@ class AStar:
                     self.PARENT[s_n] = s
                     heapq.heappush(self.OPEN, (self.f_value(s_n), s_n))
 
-        return self.extract_path(self.PARENT), self.CLOSED
+        return self.extract_path(self.PARENT)
 
 
     def get_neighbor(self, s):
@@ -156,7 +169,6 @@ class AStar:
         return abs(goal[0] - s[0]) + abs(goal[1] - s[1])
 
 
-
 class Robot:
     def __init__(self, startX=0, startY=0, goods=0, status=0, mbx=0, mby=0):
         self.x = startX
@@ -166,6 +178,7 @@ class Robot:
         self.mbx = mbx
         self.mby = mby
 
+
     def action(self, robot_id, cargo_gds, berth_gds):
         """
         移动，先移动后进行取货放货
@@ -174,12 +187,17 @@ class Robot:
         :param berth_gds: 泊位的位置列表
         :return: None
         """
+        sys.stderr.write('robot_id:' + str(robot_id)+'\n')
+        sys.stderr.write('goods:' + str(self.goods)+'\n')
+        sys.stderr.write('STATUS:' + str(self.status)+'\n')
+        sys.stderr.write('cargo_num:' + str(len(cargo_gds))+'\n')
         # 状态为0停止运行（随机走）
         if self.status == 0:
             print("move", robot_id, random.randint(0, 3))
+            sys.stdout.flush()
 
         # 正常运行
-        else:
+        elif self.status == 1:
             if self.goods == 0:  # 没有货物，因此找货物
                 current_pos = (self.x, self.y)
                 # 寻找最近的货物，每次进入循环计算，是贪心
@@ -191,21 +209,42 @@ class Robot:
                         min_distance = distance
                         nearest_cargo = cargo_pos
                 # 向最近的货物位置移动
-
-
-
-
+                astar = AStar(current_pos, nearest_cargo, obs_position)
+                path = astar.searching()
                 # 检查将移动的位置是否有效
-                new_pos = None
-                print("move", robot_id, random.randint(0, 3))
+                new_pos = path[-2]
+                dr = move_direction(current_pos, new_pos)
+                print("move", robot_id, dr)
+                sys.stdout.flush()
                 # 判断是否到了最优点，到了取货就行取货物
                 if new_pos == nearest_cargo:
                     print("get", robot_id)
-            else:  # 有货物，因此找泊位
+                    sys.stdout.flush()
+                    axis.remove(nearest_cargo)
 
 
+            elif self.goods == 1:  # 有货物，因此找泊位
+                current_pos = (self.x, self.y)
+                # 寻找最近的货物，每次进入循环计算，是贪心
+                nearest_berth = None
+                min_distance = float('inf')
+                for berth_pos in berth_gds:
+                    distance = abs(berth_pos[0] - current_pos[0]) + abs(berth_pos[1] - current_pos[1])
+                    if distance < min_distance:
+                        min_distance = distance
+                        nearest_berth = berth_pos
+                # 向最近的货物位置移动
+                astar = AStar(current_pos, nearest_berth, obs_position)
+                path = astar.searching()
                 # 检查将移动的位置是否有效
-                print("move", robot_id, random.randint(0, 3))
+                new_pos = path[-2]
+                dr = move_direction(current_pos, new_pos)
+                print("move", robot_id, dr)
+                sys.stdout.flush()
+                # 判断是否到了最优点，到了取货就行取货物
+                if new_pos == nearest_berth:
+                    print("pull", robot_id)
+                    sys.stdout.flush()
 
 
 robot = [Robot() for _ in range(robot_num + 10)]
@@ -231,12 +270,14 @@ class Boat:
 
 boat = [Boat() for _ in range(10)]
 
+
 money = 0
 boat_capacity = 0
 id = 0
 ch = []
 gds = [[0 for _ in range(N)] for _ in range(N)]
 axis = []
+cargo_dont_find = set()  # 货物没有找到的集合,留下一个接口后面处理
 
 
 def Init():
@@ -260,6 +301,7 @@ def Init():
 def Input():
     id, money = map(int, input().split(" "))
     num = int(input())
+    sys.stderr.write('new_cargo_num:' + str(num) + '\n')
     for i in range(num):
         x, y, val = map(int, input().split())
         gds[x][y] = val
@@ -275,10 +317,14 @@ def Input():
 if __name__ == "__main__":
     Init()
     obs_position = obs_map(ch)
+    berth_axis = [(berth[i].x, berth[i].y) for i in range(10)]  # 泊位坐标，还没优化，因为只计算左上角的点
     for zhen in range(1, 15001):
         id = Input()
+        sys.stderr.write('axis_cargo_num:' + str(len(axis)) + '\n')
         for i in range(robot_num):
-            print("move", i, random.randint(0, 3))
-            sys.stdout.flush()
+            try:
+                robot[i].action(i, axis, berth_axis)
+            except:
+                pass
         print("OK")
         sys.stdout.flush()
