@@ -34,7 +34,7 @@ def move_direction(current_pos, next_pos):
     elif dy == -1:
         return 1  # 左移
     else:
-        return 0
+        return random.randint(0, 3)
 
 class AStar:
     """AStar set the cost + heuristics as the priority
@@ -51,19 +51,20 @@ class AStar:
         self.PARENT = dict()  # recorded parent
         self.g = dict()  # cost to come
 
-    def searching(self):
+    def searching(self, max_iterations=40000):
         """
         A*算法
         :return: 路径和遍历点
         """
-
+        iteration = 0
         self.PARENT[self.s_start] = self.s_start
         self.g[self.s_start] = 0
         self.g[self.s_goal] = math.inf
         heapq.heappush(self.OPEN,
                        (self.f_value(self.s_start), self.s_start))
 
-        while self.OPEN:
+        while self.OPEN and iteration < max_iterations:
+            iteration += 1
             _, s = heapq.heappop(self.OPEN)
             # self.CLOSED.append(s)
 
@@ -80,6 +81,8 @@ class AStar:
                     self.g[s_n] = new_cost
                     self.PARENT[s_n] = s
                     heapq.heappush(self.OPEN, (self.f_value(s_n), s_n))
+        if iteration >= max_iterations:
+            return None
 
         return self.extract_path(self.PARENT)
 
@@ -187,14 +190,17 @@ class Robot:
         :param berth_gds: 泊位的位置列表
         :return: None
         """
+        global axis
         sys.stderr.write('robot_id:' + str(robot_id)+'\n')
         sys.stderr.write('goods:' + str(self.goods)+'\n')
         sys.stderr.write('STATUS:' + str(self.status)+'\n')
         sys.stderr.write('cargo_num:' + str(len(cargo_gds))+'\n')
         # 状态为0停止运行（随机走）
         if self.status == 0:
-            print("move", robot_id, random.randint(0, 3))
-            sys.stdout.flush()
+            # print("move", robot_id, random.randint(0, 3))
+            # sys.stdout.flush()
+            sys.stderr.write('wait'+'\n')
+            pass
 
         # 正常运行
         elif self.status == 1:
@@ -208,43 +214,47 @@ class Robot:
                     if distance < min_distance:
                         min_distance = distance
                         nearest_cargo = cargo_pos
+                sys.stderr.write('find cargo'+'\n')
                 # 向最近的货物位置移动
                 astar = AStar(current_pos, nearest_cargo, obs_position)
                 path = astar.searching()
+                sys.stderr.write('find cargo path complete'+'\n')
+                if not path:
+                    axis.remove(nearest_cargo)
+                    sys.stderr.write('delete cargo'+'\n')
                 # 检查将移动的位置是否有效
                 new_pos = path[-2]
                 dr = move_direction(current_pos, new_pos)
                 print("move", robot_id, dr)
                 sys.stdout.flush()
+                sys.stderr.write('move1 complete'+'\n')
                 # 判断是否到了最优点，到了取货就行取货物
                 if new_pos == nearest_cargo:
                     print("get", robot_id)
                     sys.stdout.flush()
                     axis.remove(nearest_cargo)
-
+                    sys.stderr.write('get complete'+'\n')
 
             elif self.goods == 1:  # 有货物，因此找泊位
+                sys.stderr.write('ready to transport'+'\n')
                 current_pos = (self.x, self.y)
-                # 寻找最近的货物，每次进入循环计算，是贪心
-                nearest_berth = None
-                min_distance = float('inf')
-                for berth_pos in berth_gds:
-                    distance = abs(berth_pos[0] - current_pos[0]) + abs(berth_pos[1] - current_pos[1])
-                    if distance < min_distance:
-                        min_distance = distance
-                        nearest_berth = berth_pos
+                # 直接对应去送对应的港口，不管了
+                target_berth = berth_gds[robot_id]
+                sys.stderr.write('find berth'+'\n')
                 # 向最近的货物位置移动
-                astar = AStar(current_pos, nearest_berth, obs_position)
+                astar = AStar(current_pos, target_berth, obs_position)
                 path = astar.searching()
                 # 检查将移动的位置是否有效
                 new_pos = path[-2]
                 dr = move_direction(current_pos, new_pos)
                 print("move", robot_id, dr)
                 sys.stdout.flush()
+                sys.stderr.write('move2 complete'+'\n')
                 # 判断是否到了最优点，到了取货就行取货物
-                if new_pos == nearest_berth:
+                if new_pos == target_berth:
                     print("pull", robot_id)
                     sys.stdout.flush()
+                    sys.stderr.write('pull complete'+'\n')
 
 
 robot = [Robot() for _ in range(robot_num + 10)]
@@ -278,6 +288,10 @@ ch = []
 gds = [[0 for _ in range(N)] for _ in range(N)]
 axis = []
 cargo_dont_find = set()  # 货物没有找到的集合,留下一个接口后面处理
+obs_position = set()
+berth_axis = []
+robot_current_axis_save = [(i, 1) for i in range(0, 10)]
+robot_past_axis_save = [(i, 1) for i in range(0, 10)]
 
 
 def Init():
@@ -294,6 +308,10 @@ def Init():
         berth[id].loading_speed = berth_list[4]
     boat_capacity = int(input())
     okk = input()
+    global obs_position
+    obs_position = obs_map(ch)
+    global berth_axis
+    berth_axis = [(berth[i].x, berth[i].y) for i in range(10)]  # 泊位坐标，还没优化，因为只计算左上角的点
     print("OK")
     sys.stdout.flush()
 
@@ -305,9 +323,12 @@ def Input():
     for i in range(num):
         x, y, val = map(int, input().split())
         gds[x][y] = val
+        global axis
         axis.append((x, y))
     for i in range(robot_num):
         robot[i].goods, robot[i].x, robot[i].y, robot[i].status = map(int, input().split())
+        global robot_current_axis_save
+        robot_current_axis_save[i] = (robot[i].x, robot[i].y)
     for i in range(5):
         boat[i].status, boat[i].pos = map(int, input().split())
     okk = input()
@@ -316,11 +337,8 @@ def Input():
 
 if __name__ == "__main__":
     Init()
-    obs_position = obs_map(ch)
-    berth_axis = [(berth[i].x, berth[i].y) for i in range(10)]  # 泊位坐标，还没优化，因为只计算左上角的点
     for zhen in range(1, 15001):
         id = Input()
-        sys.stderr.write('axis_cargo_num:' + str(len(axis)) + '\n')
         for i in range(robot_num):
             try:
                 robot[i].action(i, axis, berth_axis)
