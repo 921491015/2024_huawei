@@ -180,7 +180,9 @@ class Robot:
         self.status = status  # 0:待机故障 1:正常运行
         self.mbx = mbx
         self.mby = mby
-
+        self.crash_flag = False
+        self.wait_total_num = random.randint(0, 3)  # 等待几回合,随机的,每个机器人不一样
+        self.wait_num = 0  # 记录等待的回合
 
     def action(self, robot_id, cargo_gds, berth_gds):
         """
@@ -199,62 +201,70 @@ class Robot:
         if self.status == 0:
             # print("move", robot_id, random.randint(0, 3))
             # sys.stdout.flush()
-            sys.stderr.write('wait'+'\n')
+            self.crash_flag = True
             pass
 
         # 正常运行
         elif self.status == 1:
-            if self.goods == 0:  # 没有货物，因此找货物
-                current_pos = (self.x, self.y)
-                # 寻找最近的货物，每次进入循环计算，是贪心
-                nearest_cargo = None
-                min_distance = float('inf')
-                for cargo_pos in cargo_gds:
-                    distance = abs(cargo_pos[0] - current_pos[0]) + abs(cargo_pos[1] - current_pos[1])
-                    if distance < min_distance:
-                        min_distance = distance
-                        nearest_cargo = cargo_pos
-                sys.stderr.write('find cargo'+'\n')
-                # 向最近的货物位置移动
-                astar = AStar(current_pos, nearest_cargo, obs_position)
-                path = astar.searching()
-                sys.stderr.write('find cargo path complete'+'\n')
-                if not path:
-                    axis.remove(nearest_cargo)
-                    sys.stderr.write('delete cargo'+'\n')
-                # 检查将移动的位置是否有效
-                new_pos = path[-2]
-                dr = move_direction(current_pos, new_pos)
-                print("move", robot_id, dr)
-                sys.stdout.flush()
-                sys.stderr.write('move1 complete'+'\n')
-                # 判断是否到了最优点，到了取货就行取货物
-                if new_pos == nearest_cargo:
-                    print("get", robot_id)
+            if self.crash_flag:  # 机器人前面发生了碰撞
+                if self.wait_num < self.wait_total_num:  # 机器人的重启时长
+                    self.wait_num += 1  # 累加
+                else:
+                    self.wait_num = 0  # 累计数清零
+                    self.crash_flag = False  # 标志位清零
+                    print("move", robot_id, random.randint(0, 3))  # 并随机走，为了错开
+            else:  # 前面机器人没有发生碰撞
+                if self.goods == 0:  # 没有货物，因此找货物
+                    current_pos = (self.x, self.y)
+                    # 寻找最近的货物，每次进入循环计算，是贪心
+                    nearest_cargo = None
+                    min_distance = float('inf')
+                    for cargo_pos in cargo_gds:
+                        distance = abs(cargo_pos[0] - current_pos[0]) + abs(cargo_pos[1] - current_pos[1])
+                        if distance < min_distance:
+                            min_distance = distance
+                            nearest_cargo = cargo_pos
+                    sys.stderr.write('find cargo'+'\n')
+                    # 向最近的货物位置移动
+                    astar = AStar(current_pos, nearest_cargo, obs_position)
+                    path = astar.searching()
+                    sys.stderr.write('find cargo path complete'+'\n')
+                    if not path:
+                        axis.remove(nearest_cargo)
+                        sys.stderr.write('delete cargo'+'\n')
+                    # 检查将移动的位置是否有效
+                    new_pos = path[-2]
+                    dr = move_direction(current_pos, new_pos)
+                    print("move", robot_id, dr)
                     sys.stdout.flush()
-                    axis.remove(nearest_cargo)
-                    sys.stderr.write('get complete'+'\n')
+                    sys.stderr.write('move1 complete'+'\n')
+                    # 判断是否到了最优点，到了取货就行取货物
+                    if new_pos == nearest_cargo:
+                        print("get", robot_id)
+                        sys.stdout.flush()
+                        axis.remove(nearest_cargo)
+                        sys.stderr.write('get complete'+'\n')
 
-            elif self.goods == 1:  # 有货物，因此找泊位
-                sys.stderr.write('ready to transport'+'\n')
-                current_pos = (self.x, self.y)
-                # 直接对应去送对应的港口，不管了
-                target_berth = berth_gds[robot_id]
-                sys.stderr.write('find berth'+'\n')
-                # 向最近的货物位置移动
-                astar = AStar(current_pos, target_berth, obs_position)
-                path = astar.searching()
-                # 检查将移动的位置是否有效
-                new_pos = path[-2]
-                dr = move_direction(current_pos, new_pos)
-                print("move", robot_id, dr)
-                sys.stdout.flush()
-                sys.stderr.write('move2 complete'+'\n')
-                # 判断是否到了最优点，到了取货就行取货物
-                if new_pos == target_berth:
-                    print("pull", robot_id)
+                elif self.goods == 1:  # 有货物，因此找泊位
+                    sys.stderr.write('ready to transport'+'\n')
+                    current_pos = (self.x, self.y)
+                    # 直接对应去送对应的港口，不管了
+                    target_berth = berth_gds[robot_id]
+                    sys.stderr.write('find berth'+'\n')
+                    # 向最近的货物位置移动
+                    astar = AStar(current_pos, target_berth, obs_position)
+                    path = astar.searching()
+                    # 检查将移动的位置是否有效
+                    new_pos = path[-2]
+                    dr = move_direction(current_pos, new_pos)
+                    print("move", robot_id, dr)
                     sys.stdout.flush()
-                    sys.stderr.write('pull complete'+'\n')
+                    sys.stderr.write('move2 complete'+'\n')
+                    # 判断是否到了最优点，到了取货就行取货物
+                    if new_pos == target_berth:
+                        print("pull", robot_id)
+                        sys.stdout.flush()
+                        sys.stderr.write('pull complete'+'\n')
 
 
 robot = [Robot() for _ in range(robot_num + 10)]
@@ -338,6 +348,7 @@ def Input():
 if __name__ == "__main__":
     Init()
     for zhen in range(1, 15001):
+        robot_past_axis_save = robot_current_axis_save
         id = Input()
         for i in range(robot_num):
             try:
