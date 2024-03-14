@@ -8,6 +8,19 @@ robot_num = 10
 berth_num = 10
 N = 210
 
+def berth_expand(axis):
+    x, y = axis
+    berth_expand_set = []
+    # 向右扩张三格
+    for dx in range(0, 4):
+        new_x = x + dx
+        for dy in range(0, 4):  # 向下扩张三格
+            new_y = y + dy
+            # 将新的坐标添加到结果列表中
+            berth_expand_set.append((new_x, new_y))
+
+    return berth_expand_set
+
 
 def obs_map(cmap):
     """
@@ -35,6 +48,7 @@ def move_direction(current_pos, next_pos):
         return 1  # 左移
     else:
         return random.randint(0, 3)
+
 
 class AStar:
     """AStar set the cost + heuristics as the priority
@@ -224,33 +238,26 @@ class Robot:
                         if distance < min_distance:
                             min_distance = distance
                             nearest_cargo = cargo_pos
-                    sys.stderr.write('find cargo'+'\n')
                     # 向最近的货物位置移动
                     astar = AStar(current_pos, nearest_cargo, obs_position)
                     path = astar.searching()
-                    sys.stderr.write('find cargo path complete'+'\n')
                     if not path:
                         axis.remove(nearest_cargo)
-                        sys.stderr.write('delete cargo'+'\n')
                     # 检查将移动的位置是否有效
                     new_pos = path[-2]
                     dr = move_direction(current_pos, new_pos)
                     print("move", robot_id, dr)
                     sys.stdout.flush()
-                    sys.stderr.write('move1 complete'+'\n')
                     # 判断是否到了最优点，到了取货就行取货物
                     if new_pos == nearest_cargo:
                         print("get", robot_id)
                         sys.stdout.flush()
                         axis.remove(nearest_cargo)
-                        sys.stderr.write('get complete'+'\n')
 
                 elif self.goods == 1:  # 有货物，因此找泊位
-                    sys.stderr.write('ready to transport'+'\n')
                     current_pos = (self.x, self.y)
                     # 直接对应去送对应的港口，不管了
                     target_berth = berth_gds[robot_id]
-                    sys.stderr.write('find berth'+'\n')
                     # 向最近的货物位置移动
                     astar = AStar(current_pos, target_berth, obs_position)
                     path = astar.searching()
@@ -259,23 +266,24 @@ class Robot:
                     dr = move_direction(current_pos, new_pos)
                     print("move", robot_id, dr)
                     sys.stdout.flush()
-                    sys.stderr.write('move2 complete'+'\n')
                     # 判断是否到了最优点，到了取货就行取货物
+                    # if new_pos in berth_expand(target_berth):
                     if new_pos == target_berth:
+                        # berth[id].cargo_save += 1
                         print("pull", robot_id)
                         sys.stdout.flush()
-                        sys.stderr.write('pull complete'+'\n')
 
 
 robot = [Robot() for _ in range(robot_num + 10)]
 
 
 class Berth:
-    def __init__(self, x=0, y=0, transport_time=0, loading_speed=0):
+    def __init__(self, x=0, y=0, transport_time=0, loading_speed=0, cargo_num=0):
         self.x = x
         self.y = y
         self.transport_time = transport_time
         self.loading_speed = loading_speed
+        self.cargo_save = cargo_num
 
 
 berth = [Berth() for _ in range(berth_num + 10)]
@@ -284,11 +292,42 @@ berth = [Berth() for _ in range(berth_num + 10)]
 class Boat:
     def __init__(self, num=0, pos=0, status=0):
         self.num = num
-        self.pos = pos
-        self.status = status
+        self.pos = pos  # 0-9是目标泊位 -1虚拟点
+        self.status = status  # 0：运输中，1：正常运行状态，运输完成或者装卸货，2：泊位外等待
+        self.boat_goal_flag = False
+        self.wait_time = 0
+
+    def action_boat(self, boat_id):
+        """
+        船的动作规定，一个船负责两个停泊口，起码前期就先这样工作，目前没有思考全局优化，两个泊位
+        进行局部优化比较好。
+        :return: None
+        """
+        global boat_load_time
+        if self.status == 0:  # 在运输
+            pass
+        else:  # 在运行
+            if self.pos == -1:  # 在虚拟点，需要移动到泊位上，这个地方直接就是直接交替到的，没有算法，没有优化，先测试
+                boat_load_time[boat_id] = random.randint(100, 500)  # 在船去之前给船一个装载时间，这个全部是测试阶段的，没有计算货物数量，没有优化
+                if self.boat_goal_flag:  # 移动到A位
+                    print("ship", boat_id, boat_id * 2)
+                    sys.stdout.flush()
+                    self.boat_goal_flag = False
+                else:  # 移动到B位
+                    print("ship", boat_id, boat_id * 2 + 1)
+                    sys.stdout.flush()
+                    self.boat_goal_flag = True
+            else:  # 未移动到虚拟点,还装装货
+                if self.wait_time < boat_load_time[boat_id]:
+                    self.wait_time += 1
+                    pass
+                else:
+                    self.wait_time = 0
+                    print("go", boat_id)
+                    sys.stdout.flush()
 
 
-boat = [Boat() for _ in range(10)]
+boat = [Boat() for _ in range(10)]  # 船对象初始化
 
 
 money = 0
@@ -296,12 +335,13 @@ boat_capacity = 0
 id = 0
 ch = []
 gds = [[0 for _ in range(N)] for _ in range(N)]
-axis = []
+axis = []  # 货物的坐标点集
 cargo_dont_find = set()  # 货物没有找到的集合,留下一个接口后面处理
-obs_position = set()
-berth_axis = []
+obs_position = set()  # 障碍点的初始化
+berth_axis = []  # 泊位的坐标点集
 robot_current_axis_save = [(i, 1) for i in range(0, 10)]
 robot_past_axis_save = [(i, 1) for i in range(0, 10)]
+boat_load_time = [i for i in range(5)]
 
 
 def Init():
@@ -329,7 +369,6 @@ def Init():
 def Input():
     id, money = map(int, input().split(" "))
     num = int(input())
-    sys.stderr.write('new_cargo_num:' + str(num) + '\n')
     for i in range(num):
         x, y, val = map(int, input().split())
         gds[x][y] = val
@@ -348,11 +387,16 @@ def Input():
 if __name__ == "__main__":
     Init()
     for zhen in range(1, 15001):
-        robot_past_axis_save = robot_current_axis_save
+        # robot_past_axis_save = robot_current_axis_save
         id = Input()
         for i in range(robot_num):
             try:
                 robot[i].action(i, axis, berth_axis)
+            except:
+                pass
+        for j in range(5):
+            try:
+                boat[j].action_boat(j)
             except:
                 pass
         print("OK")
