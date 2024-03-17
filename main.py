@@ -194,9 +194,14 @@ class Robot:
         self.status = status  # 0:待机故障 1:正常运行
         self.mbx = mbx
         self.mby = mby
-        self.crash_flag = False
+        self.crash_flag = False  # 是否发生故障标志，为了重启
         self.wait_total_num = random.randint(0, 3)  # 等待几回合,随机的,每个机器人不一样
         self.wait_num = 0  # 记录等待的回合
+        self.minimum_dis = float('inf')  # 记录当前最小货物距离，是全局性的缓存
+        self.min_cargo_pos = (1, 2)  # 记录当前最近货物位置
+        self.good_get_fix_flag = 0
+        self.path_length = 0
+
 
     def action(self, robot_id, cargo_gds, berth_gds):
         """
@@ -207,7 +212,11 @@ class Robot:
         :return: None
         """
         global axis
-        # sys.stderr.write('robot_id:' + str(robot_id)+'\n')
+        global all_robot_path_go_berth
+        global all_robot_path_find_cargo
+        global path_has_find_flag_for_berth
+        global path_has_find_flag_for_cargo
+        sys.stderr.write('robot_id:' + str(robot_id)+'\n')
         # sys.stderr.write('goods:' + str(self.goods)+'\n')
         # sys.stderr.write('STATUS:' + str(self.status)+'\n')
         # sys.stderr.write('cargo_num:' + str(len(cargo_gds))+'\n')
@@ -216,6 +225,8 @@ class Robot:
             # print("move", robot_id, random.randint(0, 3))
             # sys.stdout.flush()
             self.crash_flag = True
+            path_has_find_flag_for_berth[robot_id] = False
+            # path_has_find_flag_for_cargo[robot_id] = False
             pass
 
         # 正常运行
@@ -238,49 +249,92 @@ class Robot:
                         if distance < min_distance:
                             min_distance = distance
                             nearest_cargo = cargo_pos
-                    # 向最近的货物位置移动
-                    astar = AStar(current_pos, nearest_cargo, obs_position)
-                    path = astar.searching()
-                    if not path:
-                        axis.remove(nearest_cargo)
-                    # 检查将移动的位置是否有效
-                    new_pos = path[-2]
-                    dr = move_direction(current_pos, new_pos)
-                    print("move", robot_id, dr)
-                    sys.stdout.flush()
-                    # 判断是否到了最优点，到了取货就行取货物
-                    if new_pos == nearest_cargo:
-                        print("get", robot_id)
+                    if min_distance + self.path_length < self.minimum_dis:
+                        self.minimum_dis = min_distance
+                        self.min_cargo_pos = nearest_cargo
+                        # 向最近的货物位置移动
+                        sys.stderr.write("miaomiaomiaomiaomiaomiaomiaomiaomiaomiaomiaomiao\n")
+                        astar = AStar(current_pos, nearest_cargo, obs_position)
+                        path = astar.searching()
+                        if not path:
+                            axis.remove(nearest_cargo)
+                            self.minimum_dis = float('inf')
+                        else:
+                            all_robot_path_find_cargo[robot_id] = path
+                            new_pos = all_robot_path_find_cargo[robot_id][-2]
+                            all_robot_path_find_cargo[robot_id].pop()
+                            self.path_length += 1
+                            dr = move_direction(current_pos, new_pos)
+                            print("move", robot_id, dr)
+                            sys.stdout.flush()
+                            # 判断是否到了最优点，到了取货就行取货物
+                            if new_pos == nearest_cargo:
+                                self.minimum_dis = float('inf')
+                                self.path_length = 0
+                                # if self.good_get_fix_flag == 0:
+                                #     self.good_get_fix_flag = 1
+                                # elif self.good_get_fix_flag == 1:
+                                #     self.good_get_fix_flag = 0
+                                print("get", robot_id)
+                                sys.stdout.flush()
+                                axis.remove(nearest_cargo)
+                    else:
+                        sys.stderr.write("HAHAHAHHAHAHAHAHA\n")
+                        new_pos = all_robot_path_find_cargo[robot_id][-2]
+                        all_robot_path_find_cargo[robot_id].pop()
+                        self.path_length += 1
+                        dr = move_direction(current_pos, new_pos)
+                        print("move", robot_id, dr)
                         sys.stdout.flush()
-                        axis.remove(nearest_cargo)
+                        # 判断是否到了最优点，到了取货就行取货物
+                        if new_pos == self.min_cargo_pos:
+                            self.minimum_dis = float('inf')
+                            self.path_length = 0
+                            print("get", robot_id)
+                            sys.stdout.flush()
+                            axis.remove(self.min_cargo_pos)
+
 
                 elif self.goods == 1:  # 有货物，因此找泊位
                     current_pos = (self.x, self.y)
                     # 直接对应去送对应的港口，不管了
                     target_berth = berth_gds[robot_id]
-                    # sys.stderr.write('送到的港口：' + str(berth_gds[robot_id]) + '\n')
-                    # 向最近的货物位置移动
-                    astar = AStar(current_pos, target_berth, obs_position)
-                    path = astar.searching()
+                    if not path_has_find_flag_for_berth[robot_id]:
+                        # 向最近的货物位置移动
+                        astar = AStar(current_pos, target_berth, obs_position)
+                        path = astar.searching()
+                        path_has_find_flag_for_berth[robot_id] = True
+                        all_robot_path_go_berth[robot_id] = path
+                        new_pos = all_robot_path_go_berth[robot_id][-2]
+                        all_robot_path_go_berth[robot_id].pop()
                     # 检查将移动的位置是否有效
-                    new_pos = path[-2]
-                    dr = move_direction(current_pos, new_pos)
-                    print("move", robot_id, dr)
-                    sys.stdout.flush()
-                    # 判断是否到了最优点，到了取货就行取货物
-                    # if new_pos in berth_expand(target_berth):
-                    if new_pos == target_berth:
-                        berth[robot_id].cargo_save = berth[robot_id].cargo_save + 1
-                        sys.stderr.write('送到的港口货物加1：' + str((berth[robot_id].x, berth[robot_id].y)) + '\n')
-                        print("pull", robot_id)
+                        dr = move_direction(current_pos, new_pos)
+                        print("move", robot_id, dr)
                         sys.stdout.flush()
+                        # 判断是否到了最优点，到了放货
+                        if new_pos == target_berth:
+                            path_has_find_flag_for_berth[robot_id] = False
+                            print("pull", robot_id)
+                            sys.stdout.flush()
+
+                    else:
+                        sys.stderr.write("GAGAGAGAGAGAGAGAGAGA\n")
+                        new_pos = all_robot_path_go_berth[robot_id][-2]
+                        all_robot_path_go_berth[robot_id].pop()
+                        dr = move_direction(current_pos, new_pos)
+                        print("move", robot_id, dr)
+                        sys.stdout.flush()
+                        if new_pos == target_berth:
+                            path_has_find_flag_for_berth[robot_id] = False
+                            print("pull", robot_id)
+                            sys.stdout.flush()
 
 
 robot = [Robot() for _ in range(robot_num + 10)]
 
 
 class Berth:
-    def __init__(self, x=0, y=0, transport_time=0, loading_speed=0):
+    def __init__(self, x=0, y=0, transport_time=0, loading_speed=0, cargo_num=0):
         self.x = x
         self.y = y
         self.transport_time = transport_time
@@ -481,6 +535,11 @@ robot_current_axis_save = [(i, 1) for i in range(0, 10)]
 robot_past_axis_save = [(i, 1) for i in range(0, 10)]
 boat_load_time = [i for i in range(5)]
 berth_pair = [0 for _ in range(5)]
+robot_path = []
+all_robot_path_find_cargo = [robot_path.copy() for _ in range(10)]  # 所有机器人的路径,存在全局里
+all_robot_path_go_berth = [robot_path.copy() for _ in range(10)]  # 所有机器人的路径,存在全局里
+# path_has_find_flag_for_cargo = [False for _ in range(10)]  # 所有机器人找到路径的标志位，默认False，则第一次进入会找路径，找到路径后会置为True
+path_has_find_flag_for_berth = [False for _ in range(10)]  # 所有机器人找到路径的标志位，默认False，则第一次进入会找路径，找到路径后会置为True
 
 def Init():
     for i in range(0, n):
@@ -497,7 +556,6 @@ def Init():
         berth[id].loading_speed = berth_list[4]
     global boat_capacity
     boat_capacity = int(input())
-    # sys.stderr.write('===========船的容积' + str(boat_capacity) + '\n')
     okk = input()
     global obs_position
     obs_position = obs_map(ch)
@@ -532,7 +590,6 @@ def Input():
 
 if __name__ == "__main__":
     Init()
-    # sys.stderr.write('===========船的容积' + str(boat_capacity) + '\n')
     for zhen in range(1, 15001):
         # robot_past_axis_save = robot_current_axis_save
         id = Input()
