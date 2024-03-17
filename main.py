@@ -207,10 +207,10 @@ class Robot:
         :return: None
         """
         global axis
-        sys.stderr.write('robot_id:' + str(robot_id)+'\n')
-        sys.stderr.write('goods:' + str(self.goods)+'\n')
-        sys.stderr.write('STATUS:' + str(self.status)+'\n')
-        sys.stderr.write('cargo_num:' + str(len(cargo_gds))+'\n')
+        # sys.stderr.write('robot_id:' + str(robot_id)+'\n')
+        # sys.stderr.write('goods:' + str(self.goods)+'\n')
+        # sys.stderr.write('STATUS:' + str(self.status)+'\n')
+        # sys.stderr.write('cargo_num:' + str(len(cargo_gds))+'\n')
         # 状态为0停止运行（随机走）
         if self.status == 0:
             # print("move", robot_id, random.randint(0, 3))
@@ -258,6 +258,7 @@ class Robot:
                     current_pos = (self.x, self.y)
                     # 直接对应去送对应的港口，不管了
                     target_berth = berth_gds[robot_id]
+                    # sys.stderr.write('送到的港口：' + str(berth_gds[robot_id]) + '\n')
                     # 向最近的货物位置移动
                     astar = AStar(current_pos, target_berth, obs_position)
                     path = astar.searching()
@@ -269,7 +270,8 @@ class Robot:
                     # 判断是否到了最优点，到了取货就行取货物
                     # if new_pos in berth_expand(target_berth):
                     if new_pos == target_berth:
-                        # berth[id].cargo_save += 1
+                        berth[robot_id].cargo_save = berth[robot_id].cargo_save + 1
+                        sys.stderr.write('送到的港口货物加1：' + str((berth[robot_id].x, berth[robot_id].y)) + '\n')
                         print("pull", robot_id)
                         sys.stdout.flush()
 
@@ -278,12 +280,14 @@ robot = [Robot() for _ in range(robot_num + 10)]
 
 
 class Berth:
-    def __init__(self, x=0, y=0, transport_time=0, loading_speed=0, cargo_num=0):
+    def __init__(self, x=0, y=0, transport_time=0, loading_speed=0):
         self.x = x
         self.y = y
         self.transport_time = transport_time
         self.loading_speed = loading_speed
-        self.cargo_save = cargo_num
+        self.cargo_save = 0
+        self.cargo_save_now = 0
+        self.berth_id = 0
 
 
 berth = [Berth() for _ in range(berth_num + 10)]
@@ -294,10 +298,14 @@ class Boat:
         self.num = num
         self.pos = pos  # 0-9是目标泊位 -1虚拟点
         self.status = status  # 0：运输中，1：正常运行状态，运输完成或者装卸货，2：泊位外等待
-        self.boat_goal_flag = False
-        self.wait_time = 0
-
-    def action_boat(self, boat_id):
+        self.boat_goal_flag = 0
+        self.wait_time = 0 #已经等待的时间
+        self.last_time = 0  # 最后一轮规定等待的时间
+        self.first = 1 #第一次派船
+        self.last  = 0
+        self.go = 0 #返回港口
+        self.berth_repon = ()
+    def action_boat_random(self, boat_id):
         """
         船的动作规定，一个船负责两个停泊口，起码前期就先这样工作，目前没有思考全局优化，两个泊位
         进行局部优化比较好。
@@ -326,9 +334,139 @@ class Boat:
                     print("go", boat_id)
                     sys.stdout.flush()
 
+    def action_boat(self, boat_id):
+        """
+        船的动作规定，一个船负责两个停泊口，起码前期就先这样工作，目前没有思考全局优化，两个泊位
+        进行局部优化比较好。
+        :return: None
+        """
+        global boat_load_time
+        if 15000 - 2* (berth[self.berth_repon[0]].transport_time - berth[self.berth_repon[1]].transport_time) - 500 <= id and self.last == 0:
+            if self.go == 1 and self.status == 0:
+                #编号为self.berth_repon[self.boat_goal_flag]机器人往港口编号为self.berth_repon[int(not self.boat_goal_flag)]的地方送货
+                self.last = 1
+            elif self.go == 0 and self.status == 0:
+                # 编号为self.berth_repon[int(not self.boat_goal_flag)]机器人往港口编号为self.berth_repon[self.boat_goal_flag]的地方送货
+                self.last = 0.5
+            elif self.pos == -1 and self.status == 1:
+                # 编号为self.berth_repon[self.boat_goal_flag]机器人往港口编号为self.berth_repon[int(not self.boat_goal_flag)]的地方送货
+                self.last = 0.5
+            else:
+                # 编号为self.berth_repon[int(not self.boat_goal_flag)]机器人往港口编号为self.berth_repon[self.boat_goal_flag]的地方送货
+                self.last = 0.5
+
+
+
+        if self.status == 0:  # 在运输
+            pass
+        else:  # 在运行
+            if self.pos == -1:  # 在虚拟点，需要移动到泊位上，这个地方直接就是直接交替到的，没有算法，没有优化，先测试
+                if self.first == 1:   #第一次派船
+                    max_index = max((0, 1), key=lambda index: berth[self.berth_repon[index]].loading_speed)
+                    sys.stderr.write('第一次派船' + str(self.berth_repon[max_index]) + '\n')
+                    sys.stderr.write('移动的时间' + str(berth[self.berth_repon[max_index]].transport_time) + '\n')
+                    # boat_load_time[boat_id] = random.randint(100, 500)
+                    print("ship", boat_id, self.berth_repon[max_index])
+                    sys.stdout.flush()
+                    self.boat_goal_flag = max_index
+
+                else:
+                # boat_load_time[boat_id] = random.randint(100, 500)  # 在船去之前给船一个装载时间，这个全部是测试阶段的，没有计算货物数量，没有优化
+                #     if self.wait_time
+                    self.go = 0
+                    if self.boat_goal_flag:  # 移动到A位
+                        print("ship", boat_id, self.berth_repon[0])
+                        sys.stdout.flush()
+                        self.boat_goal_flag = 0
+                    else:  # 移动到B位
+                        print("ship", boat_id, self.berth_repon[1])
+                        sys.stdout.flush()
+                        self.boat_goal_flag = 1
+            else:  # 未移动到虚拟点,还装装货
+                # if self.arrive == 0:
+                #     self.arrive = 1
+                if self.first == 1:
+                    self.first = 0
+                if self.last == 0.5:
+                    self.last_time = id - berth[self.berth_repon[self.boat_goal_flag]].transport_time - 2 * berth[
+                        self.berth_repon[int(not self.boat_goal_flag)]].transport_time - berth[self.berth_repon[
+                        int(not self.boat_goal_flag)]].cargo_save * berth[self.berth_repon[int(
+                        not self.boat_goal_flag)]].loading_speed - 100
+                    self.num = min(self.wait_time // berth[self.berth_repon[self.boat_goal_flag]].loading_speed, berth[self.berth_repon[self.boat_goal_flag]].cargo_save)
+                    if self.wait_time >= self.last_time or boat_capacity <= self.num + 1:
+                        self.wait_time = 0
+                        berth[self.berth_repon[self.boat_goal_flag]].cargo_save = max(0, self.num - berth[self.berth_repon[self.boat_goal_flag]].cargo_save)
+                        self.num = 0
+                        self.last = 1
+                        print("go", boat_id)
+                        sys.stdout.flush()
+                        self.go = 1
+
+                    if self.go != 1:
+                        self.wait_time += 1
+                elif self.last == 1:
+                    self.last_time = id - berth[self.berth_repon[self.boat_goal_flag]].transport_time - 100
+                    if self.wait_time >= self.last_time:
+                        self.wait_time = 0
+                        berth[self.berth_repon[self.boat_goal_flag]].cargo_save = max(0, self.num - berth[self.berth_repon[self.boat_goal_flag]].cargo_save)
+                        self.num = 0
+                        self.last = 1
+                        print("go", boat_id)
+                        sys.stdout.flush()
+                        self.go = 1
+                    if self.go != 1:
+                        self.wait_time += 1
+
+                else:
+                    self.num = min(self.wait_time // berth[self.berth_repon[self.boat_goal_flag]].loading_speed, berth[self.berth_repon[self.boat_goal_flag]].cargo_save)
+                    sys.stderr.write('船在港口等待' + str(berth[self.berth_repon[self.boat_goal_flag]].berth_id) + '    船装的货物' + str(self.num) + '     港口的货物' + str(berth[self.berth_repon[self.boat_goal_flag]].cargo_save) + '\n')
+                    # sys.stderr.write('船在港口装货的速度' + str(berth[int(not self.boat_goal_flag)].loading_speed)  + '    船等待的时间'  + str(self.wait_time) + '\n')
+                    if boat_capacity <= self.num + 1  or (self.num > 9 and berth[self.berth_repon[self.boat_goal_flag]].cargo_save <= self.num) or (self.num < 9 and berth[self.berth_repon[int(not self.boat_goal_flag)]].cargo_save >= boat_capacity // 2):  #直接走
+                        # if self.num + berth[self.boat_goal_flag].cargo_save
+                        self.wait_time = 0
+                        berth[self.berth_repon[self.boat_goal_flag]].cargo_save = max(0, self.num - berth[self.berth_repon[self.boat_goal_flag]].cargo_save)
+                        self.num = 0
+
+                        print("go", boat_id)
+                        sys.stdout.flush()
+                        self.go = 1
+                    # berth[int(not self.boat_goal_flag)].cargo_save = 0
+                # if self.wait_time < boat_load_time[boat_id]:
+                #     if boat_capacity <= self.num and boat_capacity <= berth[self.berth_repon[self.boat_goal_flag]].cargo_save:
+                #         self.wait_time = 0
+                #         berth[self.berth_repon[self.boat_goal_flag]].cargo_save = 0
+                #         self.num = 0
+                #
+                #         print("go", boat_id)
+                #         sys.stdout.flush()
+                #         self.go = 1
+                        # berth[int(not self.boat_goal_flag)].cargo_save = 0
+                        # if self.wait_time < boat_load_time[boat_id]:
+                    if self.go != 1:
+                        self.wait_time += 1
+
+                #     pass
+                # else:
+                #     self.wait_time = 0
+                #     print("go", boat_id)
+                #     sys.stdout.flush()
+
 
 boat = [Boat() for _ in range(10)]  # 船对象初始化
 
+def get_berth_pair():
+    # 根据实例的'value'属性进行排序
+    sorted_berth = sorted(berth[:10], key=lambda instance: instance.transport_time)
+    # 找到中间的索引
+    mid = len(sorted_berth) // 2
+    # 初始化结果列表
+    pairs = []
+    # 从排序后的列表两端取实例进行组合
+    for i in range(mid):
+        pair = (sorted_berth[i].berth_id, sorted_berth[-(i + 1)].berth_id)
+        pairs.append(pair)
+    sys.stderr.write('指派区域' + str(pairs) + '\n')
+    return pairs
 
 money = 0
 boat_capacity = 0
@@ -342,7 +480,7 @@ berth_axis = []  # 泊位的坐标点集
 robot_current_axis_save = [(i, 1) for i in range(0, 10)]
 robot_past_axis_save = [(i, 1) for i in range(0, 10)]
 boat_load_time = [i for i in range(5)]
-
+berth_pair = [0 for _ in range(5)]
 
 def Init():
     for i in range(0, n):
@@ -352,16 +490,24 @@ def Init():
         line = input()
         berth_list = [int(c) for c in line.split(sep=" ")]
         id = berth_list[0]
+        berth[id].berth_id = id
         berth[id].x = berth_list[1]
         berth[id].y = berth_list[2]
         berth[id].transport_time = berth_list[3]
         berth[id].loading_speed = berth_list[4]
+    global boat_capacity
     boat_capacity = int(input())
+    # sys.stderr.write('===========船的容积' + str(boat_capacity) + '\n')
     okk = input()
     global obs_position
     obs_position = obs_map(ch)
     global berth_axis
     berth_axis = [(berth[i].x, berth[i].y) for i in range(10)]  # 泊位坐标，还没优化，因为只计算左上角的点
+    global berth_pair
+    berth_pair = get_berth_pair()
+    for i in range(5):
+        boat[i].berth_repon = berth_pair[i]
+        sys.stderr.write('船对应港口初始化' + str(boat[i].berth_repon) + '\n')
     print("OK")
     sys.stdout.flush()
 
@@ -386,6 +532,7 @@ def Input():
 
 if __name__ == "__main__":
     Init()
+    # sys.stderr.write('===========船的容积' + str(boat_capacity) + '\n')
     for zhen in range(1, 15001):
         # robot_past_axis_save = robot_current_axis_save
         id = Input()
