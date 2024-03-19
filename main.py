@@ -307,7 +307,7 @@ class Robot:
                         target_berth = berth_gds[self.last_target]
                         if self.change_flag == 0.5:
                             for i in range(10):
-                                sys.stderr.write('机器人编号：' + str(robot_id) + '         0.5555改变目标：' + str(self.last_target) + '\n')
+                                sys.stderr.write('机器人编号：' + str(robot_id) + '          0.5555改变目标：' + str(self.last_target) + '\n')
                             path_has_find_flag_for_berth[robot_id] = False
                             self.change_flag = 1
                     #     修改目标，然后设为没有找到路径False
