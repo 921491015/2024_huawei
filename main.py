@@ -336,12 +336,21 @@ class Robot:
                         sys.stdout.flush()
                         # 判断是否到了最优点，到了放货
                         if new_pos == target_berth:
+                            if self.last != 0 or zhen >= 11000:
+                                for i in range(10):
+                                    sys.stderr.write(
+                                        '机器人编号：' + str(robot_id) + '   理论到港id：' + str(
+                                            self.last_target) + '   实际到港id：' + str(
+                                            berth_gds.index(target_berth)) + '    last' + str(self.last) + '\n')
                             path_has_find_flag_for_berth[robot_id] = False
                             print("pull", robot_id)
                             sys.stdout.flush()
-                            berth[robot_id].cargo_save += 1
+                            berth[berth_gds.index(target_berth)].cargo_save += 1
 
                     else:
+                        if self.last != 0:
+                            sys.stderr.write(
+                                '机器人编号：' + str(robot_id) + '   改变目标：' + str(self.last_target) + '    last' + str(self.last)  + '\n')
                         # sys.stderr.write("GAGAGAGAGAGAGAGAGAGA\n")
                         new_pos = all_robot_path_go_berth[robot_id][-2]
                         all_robot_path_go_berth[robot_id].pop()
@@ -349,10 +358,16 @@ class Robot:
                         print("move", robot_id, dr)
                         sys.stdout.flush()
                         if new_pos == target_berth:
+                            if self.last != 0 or zhen >= 11000:
+                                for i in range(10):
+                                    sys.stderr.write(
+                                        '机器人编号：' + str(robot_id) + '   理论到港id：' + str(
+                                            self.last_target) + '   实际到港id：' + str(
+                                            berth_gds.index(target_berth)) + '    last' + str(self.last) + '\n')
                             path_has_find_flag_for_berth[robot_id] = False
                             print("pull", robot_id)
                             sys.stdout.flush()
-                            berth[robot_id].cargo_save += 1
+                            berth[berth_gds.index(target_berth)].cargo_save += 1
 
 
 robot = [Robot() for _ in range(robot_num + 10)]
@@ -429,6 +444,12 @@ class Boat:
                 #编号为self.berth_repon[self.boat_goal_flag]机器人往港口编号为self.berth_repon[int(not self.boat_goal_flag)]的地方送货
                 for i in range(10):
                     sys.stderr.write('去程结算（最后一轮）：' + str(self.berth_repon[self.boat_goal_flag]) + '\n')
+                    sys.stderr.write('改变编号的机器人：' + str(
+                        self.berth_repon[self.boat_goal_flag]) + '    目标地点:' + str(self.berth_repon[
+                                                                                           int(not self.boat_goal_flag)]) + '\n')
+                robot[self.berth_repon[int(not self.boat_goal_flag)]].last_target = self.berth_repon[
+                    int(not self.boat_goal_flag)]
+                robot[self.berth_repon[int(not self.boat_goal_flag)]].last = 1
                 robot[self.berth_repon[self.boat_goal_flag]].last_target = self.berth_repon[int(not self.boat_goal_flag)]
                 robot[self.berth_repon[self.boat_goal_flag]].last = 1
                 self.last = 1
@@ -441,6 +462,9 @@ class Boat:
                 robot[self.berth_repon[int(not self.boat_goal_flag)]].last_target = self.berth_repon[
                     self.boat_goal_flag]
                 robot[self.berth_repon[int(not self.boat_goal_flag)]].last = 0.5
+                robot[self.berth_repon[self.boat_goal_flag]].last_target = self.berth_repon[
+                    self.boat_goal_flag]
+                robot[self.berth_repon[self.boat_goal_flag]].last = 0.5
                 self.last = 0.5
             elif self.pos == -1 and self.status == 1:
                 for i in range(10):
@@ -451,6 +475,9 @@ class Boat:
                 robot[self.berth_repon[self.boat_goal_flag]].last_target = self.berth_repon[
                     int(not self.boat_goal_flag)]
                 robot[self.berth_repon[self.boat_goal_flag]].last = 0.5
+                robot[self.berth_repon[int(not self.boat_goal_flag)]].last_target = self.berth_repon[
+                    int(not self.boat_goal_flag)]
+                robot[self.berth_repon[int(not self.boat_goal_flag)]].last = 0.5
                 # 编号为self.berth_repon[self.boat_goal_flag]机器人往港口编号为self.berth_repon[int(not self.boat_goal_flag)]的地方送货
                 self.last = 0.5
             else:
@@ -462,6 +489,9 @@ class Boat:
                 robot[self.berth_repon[int(not self.boat_goal_flag)]].last_target = self.berth_repon[
                     self.boat_goal_flag]
                 robot[self.berth_repon[int(not self.boat_goal_flag)]].last = 0.5
+                robot[self.berth_repon[self.boat_goal_flag]].last_target = self.berth_repon[
+                    self.boat_goal_flag]
+                robot[self.berth_repon[self.boat_goal_flag]].last = 0.5
                 # 编号为self.berth_repon[int(not self.boat_goal_flag)]机器人往港口编号为self.berth_repon[self.boat_goal_flag]的地方送货
                 self.last = 0.5
 
@@ -504,6 +534,13 @@ class Boat:
                     self.num = min(self.wait_time // berth[self.berth_repon[self.boat_goal_flag]].loading_speed, berth[self.berth_repon[self.boat_goal_flag]].cargo_save)
 
                     sys.stderr.write('倒数第二轮在港等待：' + str(self.berth_repon[self.boat_goal_flag]) + '剩余等待时间：' + str(self.last_time) + '\n')
+                    sys.stderr.write('倒数第二轮离开' + str(
+                        berth[self.berth_repon[self.boat_goal_flag]].berth_id) + '    船装的货物' + str(
+                        self.num) + '    船id' + str(boat_id) + '    对应机器人目标' + str(
+                        robot[self.berth_repon[self.boat_goal_flag]].last_target) + ',' + str(
+                        robot[self.berth_repon[int(not self.boat_goal_flag)]].last_target) + '     港口的货物' + str(
+                        berth[self.berth_repon[self.boat_goal_flag]].cargo_save) + '  另一港口的货物' + str(
+                        berth[self.berth_repon[int(not self.boat_goal_flag)]].cargo_save) + '\n')
                     if 0 >= self.last_time or boat_capacity <= self.num + 1:
                         self.wait_time = 0
                         berth[self.berth_repon[self.boat_goal_flag]].cargo_save = max(0, self.num - berth[self.berth_repon[self.boat_goal_flag]].cargo_save)
@@ -513,7 +550,10 @@ class Boat:
                         # 编号为self.berth_repon[self.boat_goal_flag]机器人往港口编号为self.berth_repon[int(not self.boat_goal_flag)]的地方送货
                         robot[self.berth_repon[self.boat_goal_flag]].last_target = self.berth_repon[
                             int(not self.boat_goal_flag)]
+                        robot[self.berth_repon[int(not self.boat_goal_flag)]].last_target = self.berth_repon[
+                            int(not self.boat_goal_flag)]
 
+                        robot[self.berth_repon[int(not self.boat_goal_flag)]].last = 1
                         robot[self.berth_repon[self.boat_goal_flag]].last = 1
                         for i in range(20):
                             sys.stderr.write('最后一轮跳转结算（最后一轮）：' + str(self.berth_repon[self.boat_goal_flag]) + '\n')
@@ -528,11 +568,25 @@ class Boat:
                         self.wait_time += 1
                 elif self.last == 1:
                     self.last_time = (15000 - id) - berth[self.berth_repon[self.boat_goal_flag]].transport_time - 100
-
+                    self.num = min(self.wait_time // berth[self.berth_repon[self.boat_goal_flag]].loading_speed,
+                                   berth[self.berth_repon[self.boat_goal_flag]].cargo_save)
                     sys.stderr.write(
                     '最后一轮在港等待：' + str(self.berth_repon[self.boat_goal_flag]) + '剩余等待时间：' + str(
                         self.last_time) + '\n')
+                    sys.stderr.write('最后一轮离开' + str(
+                        berth[self.berth_repon[self.boat_goal_flag]].berth_id) + '    船装的货物' + str(
+                        self.num) + '    船id' + str(boat_id) + '    对应机器人目标' + str(
+                        robot[self.berth_repon[self.boat_goal_flag]].last_target) + ',' + str(
+                        robot[self.berth_repon[int(not self.boat_goal_flag)]].last_target) + '     港口的货物' + str(
+                        berth[self.berth_repon[self.boat_goal_flag]].cargo_save) + '  另一港口的货物' + str(
+                        berth[self.berth_repon[int(not self.boat_goal_flag)]].cargo_save) + '\n')
                     if 0 >= self.last_time:
+                        # for i in range(10):
+                        #     sys.stderr.write('最后一轮离开' + str(
+                        #         berth[self.berth_repon[self.boat_goal_flag]].berth_id) + '    船装的货物' + str(
+                        #         self.num) + '    船id' + str(boat_id)  + '     港口的货物' + str(
+                        #         berth[self.berth_repon[self.boat_goal_flag]].cargo_save) + '  另一港口的货物' + str(berth[self.berth_repon[int(not self.boat_goal_flag)]].cargo_save) + '\n')
+
                         self.wait_time = 0
                         berth[self.berth_repon[self.boat_goal_flag]].cargo_save = max(0, self.num - berth[self.berth_repon[self.boat_goal_flag]].cargo_save)
                         self.num = 0
@@ -697,5 +751,8 @@ if __name__ == "__main__":
                 boat[j].action_boat(j)
             except:
                 pass
+        if zhen > 14500 and zhen % 10 == 0:
+            for i in range(10):
+                sys.stderr.write('各港口货物' + str(i) + '数量' + str(berth[i].cargo_save) + '\n')
         print("OK")
         sys.stdout.flush()
