@@ -1,3 +1,4 @@
+import copy
 import sys
 import random
 import heapq
@@ -65,7 +66,7 @@ class AStar:
         self.PARENT = dict()  # recorded parent
         self.g = dict()  # cost to come
 
-    def searching(self, max_iterations=40000):
+    def searching(self, max_iterations=25000):
         """
         A*算法
         :return: 路径和遍历点
@@ -188,19 +189,18 @@ class AStar:
 
 class Robot:
     def __init__(self, startX=0, startY=0, goods=0, status=0, mbx=0, mby=0):
-        self.x = startX
+        self.x = startX  # 机器人当前位置
         self.y = startY
         self.goods = goods  # 0:空 1:满
         self.status = status  # 0:待机故障 1:正常运行
         self.mbx = mbx
         self.mby = mby
         self.crash_flag = False  # 是否发生故障标志，为了重启
+        self.crash_flag_2 = False  # 是否发生故障标志，针对重启后是否重新进行路径规划
         self.wait_total_num = random.randint(0, 3)  # 等待几回合,随机的,每个机器人不一样
         self.wait_num = 0  # 记录等待的回合
-        self.minimum_dis = float('inf')  # 记录当前最小货物距离，是全局性的缓存
-        self.min_cargo_pos = (1, 2)  # 记录当前最近货物位置
-        self.good_get_fix_flag = 0
-        self.path_length = 0
+        self.path_length = 0  # 记录路径当前已经走的长度
+        self.nearest_cargo = None
 
 
     def action(self, robot_id, cargo_gds, berth_gds):
@@ -214,12 +214,16 @@ class Robot:
         global axis
         global all_robot_path_go_berth
         global all_robot_path_find_cargo
-        global path_has_find_flag_for_berth
-        global path_has_find_flag_for_cargo
+        global path_has_find_flag_for_berth  # 是否已经找到了寻货路径
+        global path_has_find_flag_for_cargo  # 是否已经找到了去港口路径
+        global robot_goal_axis_save  # 先不写成全局的
+        global robot_current_axis_save  # 机器人的当前位置变量
+
         sys.stderr.write('robot_id:' + str(robot_id)+'\n')
         # sys.stderr.write('goods:' + str(self.goods)+'\n')
         # sys.stderr.write('STATUS:' + str(self.status)+'\n')
         # sys.stderr.write('cargo_num:' + str(len(cargo_gds))+'\n')
+
         # 状态为0停止运行（随机走）
         if self.status == 0:
             # print("move", robot_id, random.randint(0, 3))
@@ -237,89 +241,150 @@ class Robot:
                 else:
                     self.wait_num = 0  # 累计数清零
                     self.crash_flag = False  # 标志位清零
+                    self.crash_flag_2 = True
                     print("move", robot_id, random.randint(0, 3))  # 并随机走，为了错开
+
             else:  # 前面机器人没有发生碰撞
                 if self.goods == 0:  # 没有货物，因此找货物
                     current_pos = (self.x, self.y)
                     # 寻找最近的货物，每次进入循环计算，是贪心
-                    nearest_cargo = None
+                    nearest_cargo = None  # 计算初始化
                     min_distance = float('inf')
-                    for cargo_pos in cargo_gds:
+                    for cargo_pos in cargo_gds:  # 这里计算的是每一回合离自己最近的货物
                         distance = abs(cargo_pos[0] - current_pos[0]) + abs(cargo_pos[1] - current_pos[1])
                         if distance < min_distance:
                             min_distance = distance
                             nearest_cargo = cargo_pos
-                    if min_distance + self.path_length < self.minimum_dis:
-                        self.minimum_dis = min_distance
-                        self.min_cargo_pos = nearest_cargo
+
+                    # if self.crash_flag_2 & self.goods == 0:  # 如果没有货物，且属于碰撞后的重启
+                    #     robot_current_other_pos = set(robot_current_axis_save)
+                    #     robot_current_other_pos.remove(robot_current_axis_save[robot_id])  # 把自己的位置删掉
+                    #     new_obs = set(robot_goal_axis_save[robot_id]) | robot_current_other_pos  # 新的障碍位置
+                    #     obs_new = obs_position | new_obs  # 更新障碍位置,按照算法，前面的机器人有优先权
+                    #     astar = AStar(current_pos, nearest_cargo, obs_new)  # 重新寻路
+                    #     path = astar.searching()
+                    #     all_robot_path_find_cargo[robot_id] = path  # 意味着上述路径算是找到了
+                    #     new_pos = all_robot_path_find_cargo[robot_id][-2]  # 新的坐标点由路径的-2索引到
+                    #     robot_goal_axis_save[robot_id] = new_pos
+                    #     all_robot_path_find_cargo[robot_id].pop()  # 因为写到全局，所以要做pop的处理
+                    #     self.path_length += 1  # 走一步路径+1
+                    #     dr = move_direction(current_pos, new_pos)
+                    #     print("move", robot_id, dr)
+                    #     sys.stdout.flush()
+
+                    # 是否已经找到路径，如果没有，进入此循环进行路径查找
+                    if not path_has_find_flag_for_cargo[robot_id]:
                         # 向最近的货物位置移动
-                        sys.stderr.write("miaomiaomiaomiaomiaomiaomiaomiaomiaomiaomiaomiao\n")
+                        # sys.stderr.write("miaomiaomiaomiaomiaomiaomiaomiaomiaomiaomiaomiao\n")
                         astar = AStar(current_pos, nearest_cargo, obs_position)
                         path = astar.searching()
-                        if not path:
-                            axis.remove(nearest_cargo)
-                            self.minimum_dis = float('inf')
-                        else:
-                            all_robot_path_find_cargo[robot_id] = path
-                            new_pos = all_robot_path_find_cargo[robot_id][-2]
-                            all_robot_path_find_cargo[robot_id].pop()
-                            self.path_length += 1
+                        if not path:  # 如果不存在这样的路径，就删掉
+                            axis.remove(nearest_cargo)  # 删除
+                        else:  # 如果存在路径
+                            all_robot_path_find_cargo[robot_id] = path  # 意味着上述路径算是找到了
+                            new_pos = all_robot_path_find_cargo[robot_id][-2]  # 新的坐标点由路径的-2索引到
+                            robot_current_other_pos = set(robot_current_axis_save)
+                            robot_current_other_pos.remove(robot_current_axis_save[robot_id])  # 把自己的位置删掉
+                            new_obs = set(robot_goal_axis_save[robot_id]) | robot_current_other_pos  # 新的障碍位置
+                            if new_pos in new_obs:
+                                obs_new = obs_position | new_obs
+                                astar = AStar(current_pos, nearest_cargo, obs_new)
+                                path = astar.searching()
+                                all_robot_path_go_berth[robot_id] = path  # 意味着上述路径算是找到了
+                                new_pos = all_robot_path_go_berth[robot_id][-2]
+                                robot_goal_axis_save[robot_id] = new_pos
+                            else:
+                                robot_goal_axis_save[robot_id] = new_pos
+                            path_has_find_flag_for_cargo[robot_id] = True
+                            self.nearest_cargo = nearest_cargo
+                            all_robot_path_find_cargo[robot_id].pop()  # 因为写到全局，所以要做pop的处理
+                            robot_goal_axis_save[robot_id] = new_pos  # 把前面机器人的新位置坐标存进去
                             dr = move_direction(current_pos, new_pos)
                             print("move", robot_id, dr)
                             sys.stdout.flush()
                             # 判断是否到了最优点，到了取货就行取货物
                             if new_pos == nearest_cargo:
-                                self.minimum_dis = float('inf')
-                                self.path_length = 0
-                                # if self.good_get_fix_flag == 0:
-                                #     self.good_get_fix_flag = 1
-                                # elif self.good_get_fix_flag == 1:
-                                #     self.good_get_fix_flag = 0
+                                path_has_find_flag_for_cargo[robot_id] = False
                                 print("get", robot_id)
                                 sys.stdout.flush()
                                 axis.remove(nearest_cargo)
-                    else:
-                        sys.stderr.write("HAHAHAHHAHAHAHAHA\n")
+
+
+                    else:  # 如果没有找到更近的货物，直接按照原路线走就行，不用重新规划
                         new_pos = all_robot_path_find_cargo[robot_id][-2]
-                        all_robot_path_find_cargo[robot_id].pop()
-                        self.path_length += 1
+                        robot_current_other_pos = set(robot_current_axis_save)
+                        robot_current_other_pos.remove(robot_current_axis_save[robot_id])  # 把自己的位置删掉
+                        new_obs = set(robot_goal_axis_save[robot_id]) | robot_current_other_pos  # 新的障碍位置
+                        if new_pos in new_obs:
+                            obs_new = obs_position | new_obs
+                            astar = AStar(current_pos, self.nearest_cargo, obs_new)
+                            path = astar.searching()
+                            all_robot_path_go_berth[robot_id] = path  # 意味着上述路径算是找到了
+                            new_pos = all_robot_path_go_berth[robot_id][-2]
+                            robot_goal_axis_save[robot_id] = new_pos
+                        else:
+                            robot_goal_axis_save[robot_id] = new_pos
+                        all_robot_path_find_cargo[robot_id].pop()  # 因为写到全局，所以要做pop的处理
+                        robot_goal_axis_save[robot_id] = new_pos  # 把前面机器人的新位置坐标存进去
                         dr = move_direction(current_pos, new_pos)
                         print("move", robot_id, dr)
                         sys.stdout.flush()
                         # 判断是否到了最优点，到了取货就行取货物
-                        if new_pos == self.min_cargo_pos:
-                            self.minimum_dis = float('inf')
-                            self.path_length = 0
+                        if new_pos == self.nearest_cargo:
+                            path_has_find_flag_for_cargo[robot_id] = False
                             print("get", robot_id)
                             sys.stdout.flush()
-                            axis.remove(self.min_cargo_pos)
+                            axis.remove(self.nearest_cargo)
 
 
                 elif self.goods == 1:  # 有货物，因此找泊位
                     current_pos = (self.x, self.y)
                     # 直接对应去送对应的港口，不管了
                     target_berth = berth_gds[robot_id]
-                    if not path_has_find_flag_for_berth[robot_id]:
+                    if not path_has_find_flag_for_berth[robot_id]:  # 这里面港口位置固定，因此不需要找，只要判断有没有搜到路径，搜到一次后面就不搜了，这里是标志位
                         # 向最近的货物位置移动
                         astar = AStar(current_pos, target_berth, obs_position)
                         path = astar.searching()
-                        path_has_find_flag_for_berth[robot_id] = True
                         all_robot_path_go_berth[robot_id] = path
                         new_pos = all_robot_path_go_berth[robot_id][-2]
-                        all_robot_path_go_berth[robot_id].pop()
+                        robot_current_other_pos = set(robot_current_axis_save)
+                        robot_current_other_pos.remove(robot_current_axis_save[robot_id])  # 把自己的位置删掉
+                        new_obs = set(robot_goal_axis_save[robot_id]) | robot_current_other_pos  # 新的障碍位置
+                        if new_pos in new_obs:
+                            obs_new = obs_position | new_obs
+                            astar_avoid_crash = AStar(current_pos, target_berth, obs_new)
+                            path = astar_avoid_crash.searching()
+                            all_robot_path_go_berth[robot_id] = path  # 意味着上述路径算是找到了
+                            new_pos = all_robot_path_go_berth[robot_id][-2]
+                            robot_goal_axis_save[robot_id] = new_pos
+                        else:
+                            robot_goal_axis_save[robot_id] = new_pos
                     # 检查将移动的位置是否有效
+                        all_robot_path_go_berth[robot_id].pop()
+                        path_has_find_flag_for_berth[robot_id] = True  # 代表搜到了，下次不搜了
                         dr = move_direction(current_pos, new_pos)
                         print("move", robot_id, dr)
                         sys.stdout.flush()
                         # 判断是否到了最优点，到了放货
                         if new_pos == target_berth:
-                            path_has_find_flag_for_berth[robot_id] = False
+                            path_has_find_flag_for_berth[robot_id] = False  # 到了港口一定要清零标志位
                             print("pull", robot_id)
                             sys.stdout.flush()
 
-                    else:
-                        sys.stderr.write("GAGAGAGAGAGAGAGAGAGA\n")
+                    else:  # 直接从存好的全局路径中找
                         new_pos = all_robot_path_go_berth[robot_id][-2]
+                        robot_current_other_pos = set(robot_current_axis_save)
+                        robot_current_other_pos.remove(robot_current_axis_save[robot_id])  # 把自己的位置删掉
+                        new_obs = set(robot_goal_axis_save[robot_id]) | robot_current_other_pos  # 新的障碍位置
+                        if new_pos in new_obs:
+                            obs_new = obs_position | new_obs
+                            astar = AStar(current_pos, target_berth, obs_new)
+                            path = astar.searching()
+                            all_robot_path_go_berth[robot_id] = path  # 意味着上述路径算是找到了
+                            new_pos = all_robot_path_go_berth[robot_id][-2]
+                            robot_goal_axis_save[robot_id] = new_pos
+                        else:
+                            robot_goal_axis_save[robot_id] = new_pos
                         all_robot_path_go_berth[robot_id].pop()
                         dr = move_direction(current_pos, new_pos)
                         print("move", robot_id, dr)
@@ -395,8 +460,8 @@ axis = []  # 货物的坐标点集
 cargo_dont_find = set()  # 货物没有找到的集合,留下一个接口后面处理
 obs_position = set()  # 障碍点的初始化
 berth_axis = []  # 泊位的坐标点集
-robot_current_axis_save = [(i, 1) for i in range(0, 10)]
-robot_past_axis_save = [(i, 1) for i in range(0, 10)]
+# robot_goal_axis_save = [(i, 1) for i in range(0, 10)]  # 机器人目标位置变量，暂时不写全局了，打算每一个zhen刷新一次
+robot_current_axis_save = [(i, 1) for i in range(0, 10)]  # 机器人当前目标位置变量
 boat_load_time = [i for i in range(5)]
 robot_path = []
 all_robot_path_find_cargo = [robot_path.copy() for _ in range(10)]  # 所有机器人的路径,存在全局里
@@ -451,6 +516,12 @@ if __name__ == "__main__":
         # if zhen > 500:
         #     print("move", 40, 20)
         id = Input()
+
+
+        if zhen == 1:
+            robot_first_axis_save = copy.deepcopy(robot_current_axis_save)
+
+        robot_goal_axis_save = [(0, 0) for _ in range(10)]  # 研究了一下，得每次循环时初始化，起码机器人在一个循环内不变。
         for i in range(robot_num):
             try:
                 robot[i].action(i, axis, berth_axis)
