@@ -66,7 +66,7 @@ class AStar:
         self.PARENT = dict()  # recorded parent
         self.g = dict()  # cost to come
 
-    def searching(self, max_iterations=25000):
+    def searching(self, max_iterations=10000):
         """
         A*算法
         :return: 路径和遍历点
@@ -104,7 +104,7 @@ class AStar:
 
     def get_neighbor(self, s):
         """
-        找到不是障碍的领点
+        找到领点
         :param s: 状态
         :return: 邻点
         """
@@ -195,12 +195,22 @@ class Robot:
         self.status = status  # 0:待机故障 1:正常运行
         self.mbx = mbx
         self.mby = mby
+        self.u_set = [(-1, 0), (0, 1), (1, 0), (0, -1)]  # 状态的位移点
         self.crash_flag = False  # 是否发生故障标志，为了重启
-        self.crash_flag_2 = False  # 是否发生故障标志，针对重启后是否重新进行路径规划
+        self.avoid_flag = False  # 避让标志
         self.wait_total_num = random.randint(0, 3)  # 等待几回合,随机的,每个机器人不一样
         self.wait_num = 0  # 记录等待的回合
         self.path_length = 0  # 记录路径当前已经走的长度
         self.nearest_cargo = None
+
+    def get_neighbor_for_avoid_crash(self, s):
+        """
+        找到不是障碍的领点
+        :param s: 状态
+        :return: 邻点
+        """
+
+        return [(s[0] + u[0], s[1] + u[1]) for u in self.u_set]
 
 
     def action(self, robot_id, cargo_gds, berth_gds):
@@ -256,21 +266,9 @@ class Robot:
                             min_distance = distance
                             nearest_cargo = cargo_pos
 
-                    # if self.crash_flag_2 & self.goods == 0:  # 如果没有货物，且属于碰撞后的重启
-                    #     robot_current_other_pos = set(robot_current_axis_save)
-                    #     robot_current_other_pos.remove(robot_current_axis_save[robot_id])  # 把自己的位置删掉
-                    #     new_obs = set(robot_goal_axis_save[robot_id]) | robot_current_other_pos  # 新的障碍位置
-                    #     obs_new = obs_position | new_obs  # 更新障碍位置,按照算法，前面的机器人有优先权
-                    #     astar = AStar(current_pos, nearest_cargo, obs_new)  # 重新寻路
-                    #     path = astar.searching()
-                    #     all_robot_path_find_cargo[robot_id] = path  # 意味着上述路径算是找到了
-                    #     new_pos = all_robot_path_find_cargo[robot_id][-2]  # 新的坐标点由路径的-2索引到
-                    #     robot_goal_axis_save[robot_id] = new_pos
-                    #     all_robot_path_find_cargo[robot_id].pop()  # 因为写到全局，所以要做pop的处理
-                    #     self.path_length += 1  # 走一步路径+1
-                    #     dr = move_direction(current_pos, new_pos)
-                    #     print("move", robot_id, dr)
-                    #     sys.stdout.flush()
+                    if self.avoid_flag:  # 如果避让了，会改变某个标志，然后进入这个循环重新寻路，这个地方要把寻路的flag变为False，把自己的flag改为False
+                        path_has_find_flag_for_cargo[robot_id] = False
+                        self.avoid_flag = False
 
                     # 是否已经找到路径，如果没有，进入此循环进行路径查找
                     if not path_has_find_flag_for_cargo[robot_id]:
@@ -285,14 +283,16 @@ class Robot:
                             new_pos = all_robot_path_find_cargo[robot_id][-2]  # 新的坐标点由路径的-2索引到
                             robot_current_other_pos = set(robot_current_axis_save)
                             robot_current_other_pos.remove(robot_current_axis_save[robot_id])  # 把自己的位置删掉
-                            new_obs = set(robot_goal_axis_save[robot_id]) | robot_current_other_pos  # 新的障碍位置
-                            if new_pos in new_obs:
-                                obs_new = obs_position | new_obs
-                                astar = AStar(current_pos, nearest_cargo, obs_new)
-                                path = astar.searching()
-                                all_robot_path_go_berth[robot_id] = path  # 意味着上述路径算是找到了
-                                new_pos = all_robot_path_go_berth[robot_id][-2]
-                                robot_goal_axis_save[robot_id] = new_pos
+                            new_obs = set(robot_goal_axis_save) | robot_current_other_pos  # 新的障碍位置
+                            if new_pos in new_obs:  # 如果新的位置在新的障碍
+                                self.avoid_flag = True  # 下次重新寻路
+                                for every_pos in self.get_neighbor_for_avoid_crash(current_pos):  # 这次就遍历邻点，进去移动就行
+                                    if every_pos in new_obs:
+                                        pass
+                                    else:
+                                        new_pos = every_pos
+                                        robot_goal_axis_save[robot_id] = new_pos
+                                        break
                             else:
                                 robot_goal_axis_save[robot_id] = new_pos
                             path_has_find_flag_for_cargo[robot_id] = True
@@ -314,14 +314,16 @@ class Robot:
                         new_pos = all_robot_path_find_cargo[robot_id][-2]
                         robot_current_other_pos = set(robot_current_axis_save)
                         robot_current_other_pos.remove(robot_current_axis_save[robot_id])  # 把自己的位置删掉
-                        new_obs = set(robot_goal_axis_save[robot_id]) | robot_current_other_pos  # 新的障碍位置
+                        new_obs = set(robot_goal_axis_save) | robot_current_other_pos  # 新的障碍位置
                         if new_pos in new_obs:
-                            obs_new = obs_position | new_obs
-                            astar = AStar(current_pos, self.nearest_cargo, obs_new)
-                            path = astar.searching()
-                            all_robot_path_go_berth[robot_id] = path  # 意味着上述路径算是找到了
-                            new_pos = all_robot_path_go_berth[robot_id][-2]
-                            robot_goal_axis_save[robot_id] = new_pos
+                            self.avoid_flag = True
+                            for every_pos in self.get_neighbor_for_avoid_crash(current_pos):
+                                if every_pos in new_obs:
+                                    pass
+                                else:
+                                    new_pos = every_pos
+                                    robot_goal_axis_save[robot_id] = new_pos
+                                    break
                         else:
                             robot_goal_axis_save[robot_id] = new_pos
                         all_robot_path_find_cargo[robot_id].pop()  # 因为写到全局，所以要做pop的处理
@@ -338,6 +340,11 @@ class Robot:
 
 
                 elif self.goods == 1:  # 有货物，因此找泊位
+
+                    if self.avoid_flag:  # 如果避让了，会改变某个标志，然后进入这个循环重新寻路，这个地方要把寻路的flag变为False，把自己的flag改为False
+                        path_has_find_flag_for_berth[robot_id] = False
+                        self.avoid_flag = False
+
                     current_pos = (self.x, self.y)
                     # 直接对应去送对应的港口，不管了
                     target_berth = berth_gds[robot_id]
@@ -349,14 +356,16 @@ class Robot:
                         new_pos = all_robot_path_go_berth[robot_id][-2]
                         robot_current_other_pos = set(robot_current_axis_save)
                         robot_current_other_pos.remove(robot_current_axis_save[robot_id])  # 把自己的位置删掉
-                        new_obs = set(robot_goal_axis_save[robot_id]) | robot_current_other_pos  # 新的障碍位置
+                        new_obs = set(robot_goal_axis_save) | robot_current_other_pos  # 新的障碍位置
                         if new_pos in new_obs:
-                            obs_new = obs_position | new_obs
-                            astar_avoid_crash = AStar(current_pos, target_berth, obs_new)
-                            path = astar_avoid_crash.searching()
-                            all_robot_path_go_berth[robot_id] = path  # 意味着上述路径算是找到了
-                            new_pos = all_robot_path_go_berth[robot_id][-2]
-                            robot_goal_axis_save[robot_id] = new_pos
+                            self.avoid_flag = True
+                            for every_pos in self.get_neighbor_for_avoid_crash(current_pos):
+                                if every_pos in new_obs:
+                                    pass
+                                else:
+                                    new_pos = every_pos
+                                    robot_goal_axis_save[robot_id] = new_pos
+                                    break
                         else:
                             robot_goal_axis_save[robot_id] = new_pos
                     # 检查将移动的位置是否有效
@@ -375,14 +384,16 @@ class Robot:
                         new_pos = all_robot_path_go_berth[robot_id][-2]
                         robot_current_other_pos = set(robot_current_axis_save)
                         robot_current_other_pos.remove(robot_current_axis_save[robot_id])  # 把自己的位置删掉
-                        new_obs = set(robot_goal_axis_save[robot_id]) | robot_current_other_pos  # 新的障碍位置
+                        new_obs = set(robot_goal_axis_save) | robot_current_other_pos  # 新的障碍位置
                         if new_pos in new_obs:
-                            obs_new = obs_position | new_obs
-                            astar = AStar(current_pos, target_berth, obs_new)
-                            path = astar.searching()
-                            all_robot_path_go_berth[robot_id] = path  # 意味着上述路径算是找到了
-                            new_pos = all_robot_path_go_berth[robot_id][-2]
-                            robot_goal_axis_save[robot_id] = new_pos
+                            self.avoid_flag = True
+                            for every_pos in self.get_neighbor_for_avoid_crash(current_pos):
+                                if every_pos in new_obs:
+                                    pass
+                                else:
+                                    new_pos = every_pos
+                                    robot_goal_axis_save[robot_id] = new_pos
+                                    break
                         else:
                             robot_goal_axis_save[robot_id] = new_pos
                         all_robot_path_go_berth[robot_id].pop()
