@@ -10,8 +10,8 @@ berth_num = 10
 N = 210
 
 
-def berth_expand(axis):
-    x, y = axis
+def berth_expand(berth_pos):
+    x, y = berth_pos
     berth_expand_set = []
     # 向右扩张三格
     for dx in range(0, 4):
@@ -67,7 +67,7 @@ class AStar:
         self.PARENT = dict()  # recorded parent
         self.g = dict()  # cost to come
 
-    def searching(self, max_iterations=10000):
+    def searching(self, max_iterations=40000):
         """
         A*算法
         :return: 路径和遍历点
@@ -238,7 +238,7 @@ class Robot:
         global robot_goal_axis_save  # 先不写成全局的，每回合要进入
         global robot_current_axis_save  # 机器人的当前位置变量
 
-        sys.stderr.write('robot_id:' + str(robot_id)+'\n')
+        # sys.stderr.write('robot_id:' + str(robot_id)+'\n')
 
         # 状态为0停止运行（随机走）
         if self.status == 0:
@@ -265,12 +265,23 @@ class Robot:
                     current_pos = (self.x, self.y)
                     # 寻找最近的货物，每次进入循环计算，是贪心
                     nearest_cargo = None  # 计算初始化
-                    min_distance = float('inf')
-                    for cargo_pos in cargo_gds:  # 这里计算的是每一回合离自己最近的货物
-                        distance = abs(cargo_pos[0] - current_pos[0]) + abs(cargo_pos[1] - current_pos[1])
-                        if distance < min_distance:
-                            min_distance = distance
-                            nearest_cargo = cargo_pos
+                    if not path_has_find_flag_for_cargo[robot_id]:
+                        max_pervalue = float(0)
+                        for cargo_pos in cargo_gds:
+                            distance = abs(cargo_pos[0] - current_pos[0]) + abs(cargo_pos[1] - current_pos[1]) + 1
+                            value = gds[cargo_pos[0]][cargo_pos[1]]
+                            if value / distance > max_pervalue:
+                                max_pervalue = value / distance
+                                # for i in range(5):
+                                #     sys.stderr.write('找到一个更小的' + str(max_pervalue) + '  机器人id:' + str(robot_id) + '\n')
+                                nearest_cargo = cargo_pos
+                    # if not path_has_find_flag_for_cargo[robot_id]:
+                    #     min_distance = float('inf')
+                    #     for cargo_pos in cargo_gds:  # 这里计算的是每一回合离自己最近的货物
+                    #         distance = abs(cargo_pos[0] - current_pos[0]) + abs(cargo_pos[1] - current_pos[1])
+                    #         if distance < min_distance:
+                    #             min_distance = distance
+                    #             nearest_cargo = cargo_pos
 
                     if self.avoid_flag:  # 如果避让了，会改变某个标志，然后进入这个循环重新寻路，这个地方要把寻路的flag变为False，把自己的flag改为False
                         path_has_find_flag_for_cargo[robot_id] = False
@@ -300,8 +311,9 @@ class Robot:
                                         break
                             else:
                                 robot_goal_axis_save[robot_id] = new_pos
-                            path_has_find_flag_for_cargo[robot_id] = True  # 找到了路径，更改标志位
-                            self.nearest_cargo = nearest_cargo  # 缓存目标位置，用来else里的判断最后的目标位置
+                            path_has_find_flag_for_cargo[robot_id] = True
+                            self.nearest_cargo = nearest_cargo
+                            axis.remove(nearest_cargo)
                             all_robot_path_find_cargo[robot_id].pop()  # 因为写到全局，所以要做pop的处理
                             robot_goal_axis_save[robot_id] = new_pos  # 把前面机器人的新位置坐标存进去
                             dr = move_direction(current_pos, new_pos)
@@ -312,7 +324,8 @@ class Robot:
                                 path_has_find_flag_for_cargo[robot_id] = False
                                 print("get", robot_id)
                                 sys.stdout.flush()
-                                axis.remove(nearest_cargo)
+                                # axis.remove(nearest_cargo)
+
 
 
                     else:  # 如果没有找到更近的货物，直接按照原路线走就行，不用重新规划
@@ -341,7 +354,10 @@ class Robot:
                             path_has_find_flag_for_cargo[robot_id] = False
                             print("get", robot_id)
                             sys.stdout.flush()
-                            axis.remove(self.nearest_cargo)
+                            if self.nearest_cargo in axis:
+                                axis.remove(self.nearest_cargo)
+                            else:
+                                pass
 
 
                 elif self.goods == 1:  # 有货物，因此找泊位
@@ -400,7 +416,7 @@ class Robot:
                         print("move", robot_id, dr)
                         sys.stdout.flush()
                         # 判断是否到了最优点，到了放货
-                        if new_pos == target_berth:
+                        if new_pos in berth_expand(target_berth):
                             if self.last != 0 or zhen >= 11000:
                                 for i in range(10):
                                     sys.stderr.write(
@@ -413,6 +429,11 @@ class Robot:
                             berth[berth_gds.index(target_berth)].cargo_save += 1
 
                     else:  # 直接从存好的全局路径中找
+                        if self.last != 0:
+                            sys.stderr.write(
+                                '机器人编号：' + str(robot_id) + '   改变目标：' + str(
+                                    self.last_target) + '    last' + str(self.last) + '\n')
+
                         new_pos = all_robot_path_go_berth[robot_id][-2]
                         robot_current_other_pos = set(robot_current_axis_save)
                         robot_current_other_pos.remove(robot_current_axis_save[robot_id])  # 把自己的位置删掉
@@ -430,7 +451,7 @@ class Robot:
                         dr = move_direction(current_pos, new_pos)
                         print("move", robot_id, dr)
                         sys.stdout.flush()
-                        if new_pos == target_berth:
+                        if new_pos in berth_expand(target_berth):
                             if self.last != 0 or zhen >= 11000:
                                 for i in range(10):
                                     sys.stderr.write(
@@ -441,6 +462,7 @@ class Robot:
                             print("pull", robot_id)
                             sys.stdout.flush()
                             berth[berth_gds.index(target_berth)].cargo_save += 1
+
 
 robot = [Robot() for _ in range(robot_num + 10)]
 
@@ -827,8 +849,14 @@ if __name__ == "__main__":
         for i in range(robot_num):
             try:
                 robot[i].action(i, axis, berth_axis)
+
+
             except:
                 pass
+
+        sys.stderr.write('4号机器人goods' + str(robot[4].goods) + '  是否找到路径' + str(path_has_find_flag_for_berth[4]) + '\n')
+        sys.stderr.write('8号机器人goods' + str(robot[8].goods) + '  是否找到路径' + str(path_has_find_flag_for_berth[8]) +'\n')
+        sys.stderr.write('9号机器人goods' + str(robot[9].goods) + '  是否找到路径' + str(path_has_find_flag_for_berth[9]) +'\n')
         for j in range(5):
             try:
                 boat[j].action_boat(j)
